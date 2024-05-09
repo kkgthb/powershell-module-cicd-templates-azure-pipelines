@@ -1,0 +1,49 @@
+parameters:
+  - name: "sourceCodeFolderPath"
+    displayName: 'Source code folder path.  Example:  "$(Build.SourcesDirectory)/src/your_module_source_code_folder_name_here"'
+    type: "string"
+
+  - name: "versionNumber"
+    displayName: "Version number"
+    type: "string"
+
+  - name: "pipelineArtifactName"
+    displayName: 'Name you would like to give the Azure Pipelines "pipeline artifact" containing your built PSD1 and PSM1 files (default is "cicd_build_output").'
+    type: "string"
+    default: "cicd_build_output"
+
+steps:
+  - task: "PowerShell@2"
+    name: "install_modulebuilder"
+    displayName: "Install ModuleBuilder from PSGallery"
+    inputs:
+      pwsh: true
+      failOnStderr: true
+      targetType: "inline"
+      script: |
+        Install-Module `
+          -Name 'ModuleBuilder' `
+          -Repository 'PSGallery' `
+          -Scope CurrentUser `
+          -Force
+
+  - task: "PowerShell@2"
+    name: "run_modulebuilder"
+    displayName: "Run ModuleBuilder"
+    inputs:
+      pwsh: true
+      failOnStderr: true
+      targetType: "inline"
+      script: |
+        Build-Module `
+          -SourcePath "${{parameters.sourceCodeFolderPath}}" `
+          -OutputDirectory "$(Build.ArtifactStagingDirectory)/cicd_build_output" `
+          -VersionedOutputDirectory `
+          -Version "${{parameters.versionNumber}}"
+
+  - task: "PublishBuildArtifacts@1"
+    name: "cache_built_module_as_named_pipeline_artifact"
+    displayName: "Publish build-artifact from staging directory to named artifact"
+    inputs:
+      pathToPublish: "$(Build.ArtifactStagingDirectory)/cicd_build_output"
+      artifactName: ${{parameters.pipelineArtifactName}}

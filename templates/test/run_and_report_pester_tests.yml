@@ -1,0 +1,49 @@
+parameters:
+  - name: "sourceCodeFolderPath"
+    displayName: 'Source code folder path.  Example:  "$(Build.SourcesDirectory)/src/your_module_source_code_folder_name_here"'
+    type: "string"
+
+  - name: "pesterTestResultsTitle"
+    displayName: "Title you would like to see representing the Pester test results in Azure DevOps Test Results."
+    type: "string"
+    default: "Pester test results"
+
+steps:
+  - task: "PowerShell@2"
+    name: "execute_pester"
+    displayName: "execute Pester"
+    inputs:
+      pwsh: true
+      failOnStderr: true
+      targetType: "inline"
+      script: |
+        $my_pester_config = New-PesterConfiguration
+        $my_pester_config.Run.Path = "${{parameters.sourceCodeFolderPath}}"
+        $my_pester_config.Run.PassThru = $false
+        $my_pester_config.Run.Exit = $true
+        $my_pester_config.CodeCoverage.OutputFormat = 'CoverageGutters'
+        $my_pester_config.CodeCoverage.Enabled = $true
+        $my_pester_config.CodeCoverage.OutputPath = "$(Build.ArtifactStagingDirectory)/cicd_pester_results/coverageResults.xml"
+        $my_pester_config.CodeCoverage.Path = "${{parameters.sourceCodeFolderPath}}"
+        $my_pester_config.TestResult.OutputFormat = 'NUnitXml'
+        $my_pester_config.TestResult.Enabled = $true
+        $my_pester_config.TestResult.OutputPath = "$(Build.ArtifactStagingDirectory)/cicd_pester_results/testResults.xml"
+        Invoke-Pester `
+          -Configuration $my_pester_config
+
+  - task: PublishCodeCoverageResults@2
+    displayName: "Publish Pester code coverage results"
+    condition: "succeededOrFailed()"
+    inputs:
+      summaryFileLocation: "$(Build.ArtifactStagingDirectory)/cicd_pester_results/coverageResults.xml"
+      pathToSources: "${{parameters.sourceCodeFolderPath}}"
+      failIfCoverageEmpty: true
+
+  - task: "PublishTestResults@2"
+    displayName: "Publish Pester test results"
+    condition: "succeededOrFailed()"
+    inputs:
+      testRunTitle: ${{parameters.pesterTestResultsTitle}}
+      testResultsFormat: "NUnit"
+      testResultsFiles: "$(Build.ArtifactStagingDirectory)/cicd_pester_results/testResults.xml"
+      failTaskOnFailedTests: true

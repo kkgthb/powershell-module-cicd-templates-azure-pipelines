@@ -1,0 +1,33 @@
+steps:
+  - task: "PowerShell@2"
+    name: "suggest_version_number_based_on_sysdate"
+    displayName: 'See your new "$(suggest_version_number_based_on_sysdate.suggested_version_number)" variable.'
+    inputs:
+      pwsh: true
+      failOnStderr: true
+      targetType: "inline"
+      script: |
+        $current_date = Get-Date -AsUTC
+        $suggestion = [String][Version]::New(
+            $null, `
+                $null, `
+                $current_date.ToString('yyyyMMdd'), `
+                '9' + $current_date.ToString('hhmmssff')
+        )
+        Write-Host "##vso[task.setvariable variable=suggested_version_number;isoutput=true]$suggestion"
+
+
+# ####################################
+# Notes:
+# 
+# At the time this was written, PoshCode/ModuleBuilder's Build-Module function 
+# expected a [Version]-compatible string, not a [SemVer]-compatible string.
+# 
+# Leading 9 is arbitrary integer just to make sure not a leading zero.  
+# "ff" is as far as we can go in timestamp formatting 
+# without getting an [Int32] conversion error out of ModuleBuilder.
+# 
+# Per https://github.com/puscasu-ion-daniel/azure-devops-docs/blob/1d67a1d/docs/pipelines/process/set-variables-scripts.md, 
+# you have to make sure you don't put any whitespace around the ";isoutput=true."  
+# Otherwise it won't properly set the variable the way you thought you named it.
+# ####################################

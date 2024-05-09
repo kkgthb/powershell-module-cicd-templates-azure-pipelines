@@ -1,0 +1,93 @@
+# ####################################
+# Notes:
+# 
+# Azure RBAC role assignments:  https://katiekodes.com/azure-rbac-role-assignment/
+# 
+# Azure Container Registry "acrPush" Azure RBAC role:  https://learn.microsoft.com/en-us/azure/container-registry/container-registry-roles
+# 
+# Entra service principals / app registrations:  https://katiekodes.com/entra-app-registration/
+# 
+# Entra federated credentials:  https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation
+# 
+# Azure Pipelines service connections:  https://learn.microsoft.com/en-us/azure/devops/pipelines/release/configure-workload-identity?view=azure-devops
+# ####################################
+
+parameters:
+  - name: "acrUrl"
+    displayName: "URL at which your Azure Container Registry can be found"
+    type: "string"
+
+  - name: "ado_service_connection_name"
+    displayName: 'Name of the service connection with "acrPush" access to your Azure Container Registry'
+    type: "string"
+
+  - name: "pipelineArtifactName"
+    displayName: 'Name you gave the Azure Pipelines "pipeline artifact" containing your built PSD1 and PSM1 files (default is "cicd_build_output").'
+    type: "string"
+    default: "cicd_build_output"
+
+steps:
+  - task: "DownloadBuildArtifacts@1"
+    name: "fetch_built_module"
+    displayName: "Fetch built module from cache back into local folder"
+    inputs:
+      downloadPath: "$(System.ArtifactsDirectory)/cicd_built_module"
+      artifactName: ${{parameters.pipelineArtifactName}}
+      buildType: "current"
+
+  - task: "PowerShell@2"
+    name: "install_preview_psresourceget"
+    displayName: "Install preview PSResourceGet"
+    inputs:
+      pwsh: true
+      failOnStderr: true
+      targetType: "inline"
+      script: |
+        Install-Module `
+          -Name 'Microsoft.PowerShell.PSResourceGet' `
+          -Repository 'PSGallery' `
+          -Scope CurrentUser `
+          -AllowPrerelease `
+          -Force
+
+  - task: "PowerShell@2"
+    name: "register_gallery"
+    displayName: "Register PowerShell gallery"
+    inputs:
+      pwsh: true
+      failOnStderr: true
+      targetType: "inline"
+      script: |
+        Register-PSResourceRepository `
+          -Name "any_uniqueish_name" `
+          -Uri "${{parameters.acrUrl}}"
+
+  - task: "AzureCLI@2"
+    displayName: "Publish module to ACR"
+    inputs:
+      azureSubscription: ${{parameters.ado_service_connection_name}}
+      scriptType: "pscore"
+      scriptLocation: "inlineScript"
+      inlineScript: |
+        $directories_to_publish = (
+          (
+            (
+              Get-ChildItem `
+                -Path "$(System.ArtifactsDirectory)/cicd_built_module" `
+                -Filter '*.psd1' `
+                -Recurse `
+                -File
+            ) `
+            | ForEach-Object { 
+              [System.IO.Path]::GetDirectoryName($_)
+            }
+          ) `
+        | Get-Unique
+        )
+        $directories_to_publish | ForEach-Object {
+          Write-Output("Publishing $_")
+          Publish-PSResource `
+            -Path $_ `
+            -Repository "any_uniqueish_name" `
+            -Verbose
+        }
